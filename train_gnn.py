@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 import numpy as np
 import pandas as pd
 import torch
@@ -10,30 +11,26 @@ from sklearn.neighbors import kneighbors_graph
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 
-def load_and_preprocess_data(normal_path, attack_path, sample_size):
-    print("Loading datasets...")
-    # Load csv files
-    df_normal = pd.read_csv(normal_path)
-    df_attack = pd.read_csv(attack_path)
+def load_and_preprocess_data(csv_path, sample_size):
+    print("Loading merged dataset...")
+    df = pd.read_csv(csv_path)
 
     # Drop index/unnamed columns if they exist
-    if df_normal.columns[0] == '':
-        df_normal = df_normal.drop(df_normal.columns[0], axis=1)
-    if df_attack.columns[0] == '':
-        df_attack = df_attack.drop(df_attack.columns[0], axis=1)
+    if df.columns[0] == '' or df.columns[0].startswith('Unnamed'):
+        df = df.drop(df.columns[0], axis=1)
 
-    print(f"Original shape - Normal: {df_normal.shape}, Attack: {df_attack.shape}")
+    print(f"Original shape: {df.shape}")
 
     # Downsample if specified
     if sample_size > 0:
         half_sample = sample_size // 2
+        df_normal = df[df['Label'] == 0]
+        df_attack = df[df['Label'] == 1]
         df_normal = df_normal.sample(n=min(half_sample, len(df_normal)), random_state=42)
         df_attack = df_attack.sample(n=min(half_sample, len(df_attack)), random_state=42)
-        print(f"Sampled shape - Normal: {df_normal.shape}, Attack: {df_attack.shape}")
+        df = pd.concat([df_normal, df_attack], axis=0, ignore_index=True)
+        print(f"Sampled shape: {df.shape}")
 
-    # Concatenate normal and attack data
-    df = pd.concat([df_normal, df_attack], axis=0, ignore_index=True)
-    
     # Target variable is "Label"
     y = df['Label'].values
     X = df.drop('Label', axis=1)
@@ -126,9 +123,10 @@ class GCN(nn.Module):
         return x
 
 def main():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    default_csv = os.path.join(base_dir, 'CTU13_Merged_Traffic.csv')
     parser = argparse.ArgumentParser(description="Train a classical GNN on CTU-13 dataset.")
-    parser.add_argument('--normal_path', type=str, default=r'd:\Mini Project\CTU13_Normal_Traffic.csv', help='Path to normal traffic csv')
-    parser.add_argument('--attack_path', type=str, default=r'd:\Mini Project\CTU13_Attack_Traffic.csv', help='Path to attack traffic csv')
+    parser.add_argument('--csv_path', type=str, default=default_csv, help='Path to merged traffic csv')
     parser.add_argument('--sample_size', type=int, default=10000, help='Total sample size to downsample to (0 for all)')
     parser.add_argument('--k_neighbors', type=int, default=5, help='Number of neighbors in k-NN graph')
     parser.add_argument('--hidden_dim', type=int, default=32, help='GCN hidden layers dimension')
@@ -138,7 +136,7 @@ def main():
     args = parser.parse_args()
 
     # Load and clean data
-    X, y = load_and_preprocess_data(args.normal_path, args.attack_path, args.sample_size)
+    X, y = load_and_preprocess_data(args.csv_path, args.sample_size)
     num_nodes = X.shape[0]
     num_features = X.shape[1]
     
@@ -174,6 +172,7 @@ def main():
     val_accs = []
 
     print("Starting training...")
+    start_time = time.time()
     for epoch in range(1, args.epochs + 1):
         model.train()
         optimizer.zero_grad()
@@ -202,6 +201,7 @@ def main():
         if epoch % 10 == 0 or epoch == 1:
             print(f"Epoch {epoch:03d} | Train Loss: {loss_train.item():.4f} | Train Acc: {acc_train:.4f} | Val Loss: {loss_val.item():.4f} | Val Acc: {acc_val:.4f}")
 
+    training_time = time.time() - start_time
     print("Training finished. Evaluating on test set...")
     model.eval()
     with torch.no_grad():
@@ -217,6 +217,7 @@ def main():
     conf_mat = confusion_matrix(labels_test, preds_test)
     print("Confusion Matrix:")
     print(conf_mat)
+    print(f"\nTraining Time: {training_time:.4f} seconds")
 
     # Plot metrics
     plt.figure(figsize=(12, 5))

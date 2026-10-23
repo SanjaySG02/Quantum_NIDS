@@ -18,45 +18,48 @@ import scipy.sparse as sp
 # 1. DATA LOADING AND PREPROCESSING
 # =====================================================================
 
-def load_and_preprocess_conn_data(csv_path):
-    print(f"Loading Zeek logs from {csv_path}...")
+def load_and_preprocess_data(csv_path, sample_size):
+    print("Loading merged dataset...")
     df = pd.read_csv(csv_path)
-    print(f"Dataset shape: {df.shape}")
 
-    # Drop non-informative features to prevent overfitting on IPs and IDs
-    drop_cols = ['uid', 'id.orig_h', 'id.resp_h', 'detailed-label']
-    df = df.drop([col for col in drop_cols if col in df.columns], axis=1)
+    # Drop index column if present
+    if df.columns[0] == '' or df.columns[0].startswith('Unnamed'):
+        df = df.drop(df.columns[0], axis=1)
 
-    # Encode label: 'benign' -> 0, 'malicious' -> 1
-    if 'label' in df.columns:
-        df['label'] = df['label'].map({'benign': 0, 'malicious': 1})
-    
-    y = df['label'].values
-    X = df.drop('label', axis=1)
+    print(f"Original shape: {df.shape}")
 
-    # Encode categorical columns
-    categorical_cols = ['proto', 'service', 'conn_state', 'history', 'local_orig', 'local_resp', 'tunnel_parents']
+    # Downsample
+    if sample_size > 0:
+        half_sample = sample_size // 2
+        df_normal = df[df['Label'] == 0]
+        df_attack = df[df['Label'] == 1]
+        df_normal = df_normal.sample(n=min(half_sample, len(df_normal)), random_state=42)
+        df_attack = df_attack.sample(n=min(half_sample, len(df_attack)), random_state=42)
+        df = pd.concat([df_normal, df_attack], axis=0, ignore_index=True)
+        print(f"Sampled shape: {df.shape}")
+
+    y = df['Label'].values
+    X = df.drop('Label', axis=1)
+
+    # Clean missing and inf values
     for col in X.columns:
-        if col in categorical_cols or X[col].dtype == object:
-            # Replace missing markers '-' with a standard category 'MISSING'
-            X[col] = X[col].astype(str).replace('-', 'MISSING')
+        if X[col].dtype == object:
             X[col] = pd.factorize(X[col])[0]
         else:
-            # Clean numerical columns
             X[col] = X[col].replace([np.inf, -np.inf], np.nan)
             col_median = X[col].median()
             if pd.isna(col_median):
                 col_median = 0
             X[col] = X[col].fillna(col_median)
 
-    # Scale all features
+    # Scale features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
     return X_scaled, y
 
 # =====================================================================
-# 2. GNN (SPARSE GCN LAYER)
+# 2. GNN CODE (SPARSE GCN IMPLEMENTATION)
 # =====================================================================
 
 def build_knn_graph(X, k):
@@ -107,7 +110,7 @@ class GCN(nn.Module):
         return x
 
 # =====================================================================
-# 3. LSTM SEQUENCE FORMULATION
+# 3. LSTM CODE
 # =====================================================================
 
 def create_sequences(X, y, seq_length=5):
@@ -124,27 +127,32 @@ class LSTMModel(nn.Module):
         self.fc = nn.Linear(hidden_dim, num_classes)
 
     def forward(self, x):
+        # x shape: [batch, seq_len, input_dim]
         out, _ = self.lstm(x)
+        # Take the output of the last sequence step
         out = self.fc(out[:, -1, :])
         return out
 
 # =====================================================================
-# 4. TRAINING AND EVALUATION PIPELINE
+# 4. MAIN COMPARISON PIPELINE
 # =====================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Train intrusion detection models on balanced new_conn_file.csv.")
-    parser.add_argument('--csv_path', type=str, default=r'd:\Mini Project\new_conn_file.csv')
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    default_csv = os.path.join(base_dir, 'CTU13_Merged_Traffic.csv')
+    parser = argparse.ArgumentParser(description="Compare RF, XGBoost, GNN, and LSTM on CTU-13 dataset.")
+    parser.add_argument('--csv_path', type=str, default=default_csv, help='Path to merged traffic csv')
+    parser.add_argument('--sample_size', type=int, default=10000, help='Sample size to downsample (default: 10000)')
     parser.add_argument('--epochs', type=int, default=50, help='Epochs to train GNN and LSTM (default: 50)')
     parser.add_argument('--k_neighbors', type=int, default=5, help='k-NN graph neighbors (default: 5)')
     args = parser.parse_args()
 
     # Preprocess
-    X, y = load_and_preprocess_conn_data(args.csv_path)
+    X, y = load_and_preprocess_data(args.csv_path, args.sample_size)
     num_nodes = X.shape[0]
     num_features = X.shape[1]
 
-    # Split (70% Train, 15% Val, 15% Test)
+    # Consistent split indices
     np.random.seed(42)
     indices = np.random.permutation(num_nodes)
     train_end = int(0.7 * num_nodes)
@@ -154,6 +162,7 @@ def main():
     val_idx = indices[train_end:val_end]
     test_idx = indices[val_end:]
 
+    # Split arrays for RF & XGBoost
     X_train, y_train = X[train_idx], y[train_idx]
     X_val, y_val = X[val_idx], y[val_idx]
     X_test, y_test = X[test_idx], y[test_idx]
@@ -163,35 +172,35 @@ def main():
     # -----------------------------------------------------------------
     # Model 1: Random Forest
     # -----------------------------------------------------------------
-    print("\n--- Training Random Forest ---")
+    print("\n--- Training Random Forest Classifier ---")
     start_time = time.time()
     rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
     rf.fit(X_train, y_train)
-    rf_time = time.time() - start_time
+    rf_train_time = time.time() - start_time
     
     rf_preds = rf.predict(X_test)
     rf_acc = accuracy_score(y_test, rf_preds)
     p, r, f, _ = precision_recall_fscore_support(y_test, rf_preds, average='binary')
-    results['Random Forest'] = {'Accuracy': rf_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': rf_time}
+    results['Random Forest'] = {'Accuracy': rf_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': rf_train_time}
     print(f"Random Forest finished. Acc: {rf_acc:.4f} | F1: {f:.4f}")
 
     # -----------------------------------------------------------------
     # Model 2: XGBoost
     # -----------------------------------------------------------------
-    print("\n--- Training XGBoost ---")
+    print("\n--- Training XGBoost Classifier ---")
     start_time = time.time()
     xgb = XGBClassifier(n_estimators=100, random_state=42, eval_metric='logloss', n_jobs=-1)
     xgb.fit(X_train, y_train)
-    xgb_time = time.time() - start_time
+    xgb_train_time = time.time() - start_time
     
     xgb_preds = xgb.predict(X_test)
     xgb_acc = accuracy_score(y_test, xgb_preds)
     p, r, f, _ = precision_recall_fscore_support(y_test, xgb_preds, average='binary')
-    results['XGBoost'] = {'Accuracy': xgb_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': xgb_time}
+    results['XGBoost'] = {'Accuracy': xgb_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': xgb_train_time}
     print(f"XGBoost finished. Acc: {xgb_acc:.4f} | F1: {f:.4f}")
 
     # -----------------------------------------------------------------
-    # Model 3: GNN (GCN)
+    # Model 3: Graph Neural Network (GNN / GCN)
     # -----------------------------------------------------------------
     print("\n--- Training GNN (GCN) ---")
     adj = build_knn_graph(X, args.k_neighbors)
@@ -199,6 +208,7 @@ def main():
     labels_t = torch.LongTensor(y.copy())
     
     train_idx_t = torch.LongTensor(train_idx)
+    val_idx_t = torch.LongTensor(val_idx)
     test_idx_t = torch.LongTensor(test_idx)
 
     gnn = GCN(in_features=num_features, hidden_features=32, out_features=2)
@@ -213,7 +223,7 @@ def main():
         loss = criterion(output[train_idx_t], labels_t[train_idx_t])
         loss.backward()
         optimizer.step()
-    gnn_time = time.time() - start_time
+    gnn_train_time = time.time() - start_time
 
     gnn.eval()
     with torch.no_grad():
@@ -222,59 +232,69 @@ def main():
         
     gnn_acc = accuracy_score(y_test, gnn_preds)
     p, r, f, _ = precision_recall_fscore_support(y_test, gnn_preds, average='binary')
-    results['GNN (GCN)'] = {'Accuracy': gnn_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': gnn_time}
+    results['GNN (GCN)'] = {'Accuracy': gnn_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': gnn_train_time}
     print(f"GNN finished. Acc: {gnn_acc:.4f} | F1: {f:.4f}")
 
     # -----------------------------------------------------------------
-    # Model 4: LSTM
+    # Model 4: LSTM (Long Short-Term Memory)
     # -----------------------------------------------------------------
     print("\n--- Training LSTM Sequence Model ---")
     seq_length = 5
+    # Build sequences within splits to avoid leakage
     X_train_seq, y_train_seq = create_sequences(X_train, y_train, seq_length)
+    X_val_seq, y_val_seq = create_sequences(X_val, y_val, seq_length)
     X_test_seq, y_test_seq = create_sequences(X_test, y_test, seq_length)
 
+    print(f"LSTM Sequence shapes - Train: {X_train_seq.shape}, Test: {X_test_seq.shape}")
+
+    # Prepare PyTorch Tensors
     train_x_t = torch.FloatTensor(X_train_seq)
     train_y_t = torch.LongTensor(y_train_seq.copy())
+    val_x_t = torch.FloatTensor(X_val_seq)
+    val_y_t = torch.LongTensor(y_val_seq.copy())
     test_x_t = torch.FloatTensor(X_test_seq)
+    test_y_t = torch.LongTensor(y_test_seq.copy())
 
-    lstm = LSTMModel(input_dim=num_features, hidden_dim=32, num_classes=2)
-    optimizer = torch.optim.Adam(lstm.parameters(), lr=0.005)
+    lstm_model = LSTMModel(input_dim=num_features, hidden_dim=32, num_classes=2)
+    optimizer = torch.optim.Adam(lstm_model.parameters(), lr=0.005)
     criterion = nn.CrossEntropyLoss()
 
+    # Dataloader for batching (to prevent memory overflow and speed up training)
     train_dataset = torch.utils.data.TensorDataset(train_x_t, train_y_t)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
 
     start_time = time.time()
     for epoch in range(1, args.epochs + 1):
-        lstm.train()
+        lstm_model.train()
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
-            output = lstm(batch_x)
+            output = lstm_model(batch_x)
             loss = criterion(output, batch_y)
             loss.backward()
             optimizer.step()
-    lstm_time = time.time() - start_time
+    lstm_train_time = time.time() - start_time
 
-    lstm.eval()
+    lstm_model.eval()
     with torch.no_grad():
-        output = lstm(test_x_t)
+        output = lstm_model(test_x_t)
         lstm_preds = output.max(1)[1].numpy()
         
     lstm_acc = accuracy_score(y_test_seq, lstm_preds)
     p, r, f, _ = precision_recall_fscore_support(y_test_seq, lstm_preds, average='binary')
-    results['LSTM'] = {'Accuracy': lstm_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': lstm_time}
+    results['LSTM'] = {'Accuracy': lstm_acc, 'Precision': p, 'Recall': r, 'F1-Score': f, 'Time (s)': lstm_train_time}
     print(f"LSTM finished. Acc: {lstm_acc:.4f} | F1: {f:.4f}")
 
     # =====================================================================
-    # 5. COMPARISON TABLE & VISUALIZATION
+    # 5. OUTPUT COMPARISON RESULTS
     # =====================================================================
     print("\n" + "="*60)
-    print("ZEEK LOG DATASET (new_conn_file.csv) MODEL COMPARISON")
+    print("FINAL ACCURACY COMPARISON REPORT")
     print("="*60)
     
+    # Formatted Standard Table
     df_results = pd.DataFrame(results).T
-    print(df_results.to_markdown())
-
+    print(df_results.to_string())
+    
     # Save comparison plot
     plt.figure(figsize=(10, 6))
     models = list(results.keys())
@@ -288,7 +308,7 @@ def main():
     plt.bar(x + width/2, f1_scores, width, label='F1-Score (%)', color='#2ca02c')
     
     plt.ylabel('Percentage (%)')
-    plt.title('Zeek Log Intrusion Detection Model Comparison')
+    plt.title('Comparison of Intrusion Detection Models (CTU-13)')
     plt.xticks(x, models)
     plt.ylim(80, 105)
     plt.legend()
@@ -299,8 +319,8 @@ def main():
         plt.text(i + width/2, f1_scores[i] + 0.5, f"{f1_scores[i]:.1f}%", ha='center', va='bottom', fontsize=9)
         
     plt.tight_layout()
-    plt.savefig('conn_model_comparison.png')
-    print("\nSaved comparison chart to conn_model_comparison.png")
+    plt.savefig('model_comparison.png')
+    print("\nSaved comparison chart to model_comparison.png")
 
 if __name__ == '__main__':
     main()

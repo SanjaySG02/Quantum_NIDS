@@ -1,0 +1,12 @@
+# Hybrid Quantum Network Intrusion Detection System (HQNIDS) Requirements
+qiskit>=1.0.0
+qiskit-aer
+torch
+scikit-learn
+pandas
+numpy
+matplotlib
+scipy
+scapy
+xgboost
+seaborn
