@@ -206,6 +206,17 @@ class FlowTracker:
 # 4. MAIN DEFENDER LOOP
 # =====================================================================
 
+def get_local_ip():
+    """Returns the primary active local IP address on Wi-Fi / LAN."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Live Quantum Guardian NIDS")
@@ -215,11 +226,15 @@ def main():
 
     auto_lock_enabled = not args.no_lock
     countdown_seconds = args.countdown
+    local_ip = get_local_ip()
 
     print(f"\n{CYAN}{BOLD}" + "="*85)
     print("      HYBRID QUANTUM NIDS - LIVE ACTIVE DEFENSE GUARDIAN")
     print("      Real-Time Quantum State Fidelity & Autonomous Workstation Lockdown")
     print("="*85 + f"{RESET}")
+    print(f"{YELLOW}[*] Target Host IP             : {BOLD}{local_ip}{RESET}")
+    print(f"{CYAN}[*] Attacker Command (Laptop 2): {BOLD}python port_scan_attacker.py --target {local_ip}{RESET}")
+    print(f"{GREEN}[*] Benign Command (Laptop 2)  : {BOLD}python benign_client.py --target {local_ip}{RESET}")
     if not auto_lock_enabled:
         print(f"{YELLOW}[!] SAFE DRY-RUN MODE: Screen lock is DISABLED (--no-lock){RESET}")
 

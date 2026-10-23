@@ -22,30 +22,26 @@ Modern Network Intrusion Detection Systems (NIDS) struggle with high-dimensional
 
 ```text
 Quantum_NIDS/
-├── CTU13_Merged_Traffic.csv    # Merged CTU-13 IoT Traffic Dataset
-├── selected_features.json     # Output: Saved top-K feature names
-├── preprocessing_meta.json    # Output: Saved MinMaxScaler bounds and categorical vocabularies
-├── train_processed.csv        # Output: Normalized training dataset
-├── val_processed.csv          # Output: Normalized validation dataset
-├── test_processed.csv         # Output: Normalized testing dataset
-├── classical_metrics.csv      # Output: Evaluated classical model metrics
-├── quantum_metrics.csv        # Output: Evaluated ideal/noisy quantum metrics
-├── quantum_artifacts.json     # Output: Saved prototype coordinates and threshold
-├── classical_nids.py          # Script: Classical data prep, splits, RF selection & training
-├── quantum_nids.py            # Script: State Fidelity Similarity engine, Ideal/Noisy evaluation
-├── train_gnn.py               # Script: PyTorch Graph Convolutional Network (GCN) on k-NN graph
-├── compare_models.py          # Script: Comprehensive benchmark (RF, XGBoost, GNN, LSTM)
-├── realtime_adapter.py        # Script: Real-time network stream simulation from test CSV
-├── realtime_sniffer.py        # Script: Real-time live network packet capture and sniffer
+├── live_defender.py          # Core: Real-time Multi-Port Sentry, Quantum Similarity Engine & Auto-Lockdown
+├── port_scan_attacker.py      # Simulator: Adversarial Multi-Port Reconnaissance Sweep
+├── benign_client.py           # Simulator: Legitimate User Single-Service Request
+├── alert_hud.py               # GUI: Emergency Containment & Workstation Lockdown HUD Overlay
+├── quantum_artifacts.json     # Trained Quantum Prototypes (Normal & Attack) and Decision Threshold
+├── preprocessing_meta.json    # Feature scaler parameters & min/max bounds
+├── selected_features.json     # Optimal top-4 selected features
+├── classical_nids.py          # Classical baseline model trainer & feature selector
+├── quantum_nids.py            # Offline Quantum Prototype Trainer & Aer Simulator Benchmark
+├── realtime_sniffer.py        # Layer-2 packet sniffer (Npcap adapter)
 ├── requirements.txt           # Project dependencies
-└── README.md                  # Documentation: Project overview & execution guide
+├── archive/                   # Archived experimental scripts (GNN, Model Comparison)
+└── README.md                  # Documentation & Demo Guide
 ```
 
 ---
 
 ## 3. Installation & Requirements
 
-Ensure you have Python installed, then clone the repository and install all dependencies:
+Ensure you have Python 3.10+ installed:
 
 ```bash
 git clone https://github.com/SanjaySG02/Quantum_NIDS.git
@@ -55,33 +51,37 @@ pip install -r requirements.txt
 
 ---
 
-## 4. How to Run
+## 4. How to Run the Live 2-Laptop Autonomous Defense Demo
 
-Follow these steps in order to demonstrate the complete integrated HQNIDS:
+### Step 1: Launch the Quantum Guardian (Laptop 1 - Target / Defender)
+Run the live quantum defender. On startup, it automatically detects and prints your laptop's active IP address:
 
-### Step 1: Execute the Classical Pipeline
-This script handles clean splitting, trains the classical models, generates the scaled processed files, and identifies the best 4 features.
 ```bash
-python classical_nids.py
+# Safe testing mode (shows threat HUD without locking your screen):
+python live_defender.py --no-lock
+
+# Live presentation mode (initiates autonomous workstation lock on intrusion):
+python live_defender.py
 ```
 
-### Step 2: Run the Quantum Similarity Engine
-Loads the processed CSV splits and builds the prototypes. Optimizes the threshold on the validation split and runs both Ideal and Noisy quantum simulations.
-```bash
-python quantum_nids.py --val_sample_size 300 --test_sample_size 150
-```
-*You can customize simulation speeds using `--val_sample_size` and `--test_sample_size`. Set them to `0` to run on the entire dataset.*
+### Step 2: Demonstrate Normal Traffic (Laptop 2 - Legitimate User)
+Demonstrates that the quantum engine distinguishes safe traffic and avoids false positives:
 
-### Step 3: Launch the Real-Time Intrusion Simulator (Offline)
-Simulates a live router flow by drawing packets from the test split every second, computing real-time quantum similarities, and logging detections.
 ```bash
-python realtime_adapter.py
+python benign_client.py --target <LAPTOP_1_IP>
 ```
-*Press `Ctrl+C` in the console window to stop the stream.*
+* **Result**: Laptop 1 evaluates the quantum state fidelity against the normal prototype ($F_{\text{Normal}} \approx 0.74 > F_{\text{Attack}} \approx 0.44$).
+* **Decision**: **`BENIGN`** (Green). No alarm, no lock.
 
-### Step 4: Launch the Live Packet Capture NIDS Adapter (Real-Time Live Network)
-Captures actual packets from your physical network adapter, extracts features, and runs them through the Quantum Similarity Engine.
+### Step 3: Launch the Adversarial Attack (Laptop 2 - Hacker / Reconnaissance)
+Simulates an aggressive multi-port TCP reconnaissance sweep:
+
 ```bash
-python realtime_sniffer.py
+python port_scan_attacker.py --target <LAPTOP_1_IP>
 ```
-*Note: Sniffing raw network packets requires administrator privileges. On Windows, open PowerShell as an Administrator and execute the command. Additionally, ensure Npcap is installed on your machine (https://npcap.com/).*
+* **Result**: Laptop 1 computes the quantum state overlap ($F_{\text{Attack}} \approx 0.59 > F_{\text{Normal}} \approx 0.29$).
+* **Decision**: **`MALICIOUS`** (Red) triggered in under 200 milliseconds.
+* **Autonomous Containment**:
+  1. Installs an inbound Windows Firewall drop rule for Laptop 2's IP (`netsh advfirewall`).
+  2. Spawns the **Quantum Threat Alert HUD** (`alert_hud.py`).
+  3. Executes `LockWorkStation` to immediately secure the physical machine.

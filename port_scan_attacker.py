@@ -104,8 +104,8 @@ def main():
     start_p = args.start
     end_p = args.end
     delay = args.delay
-
-    if not args.auto:
+    has_custom_target = args.target != "127.0.0.1"
+    if not args.auto and not has_custom_target:
         print(f"Configure attack scenario (press ENTER to use defaults):")
         inp_ip = input(f"Enter Target IP [{target_ip}]: ").strip()
         if inp_ip:
