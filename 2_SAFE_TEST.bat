@@ -18,6 +18,10 @@ echo %TARGET_IP%>target_ip.txt
 echo.
 echo [*] Sending Legitimate Service Request to %TARGET_IP%...
 echo.
-python benign_client.py --target %TARGET_IP%
+if exist "simulators\benign_client.py" (
+    python simulators\benign_client.py --target %TARGET_IP%
+) else (
+    python benign_client.py --target %TARGET_IP%
+)
 echo.
 pause

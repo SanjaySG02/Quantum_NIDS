@@ -18,6 +18,10 @@ echo %TARGET_IP%>target_ip.txt
 echo.
 echo [!] Launching Multi-Port Reconnaissance Sweep against %TARGET_IP%...
 echo.
-python port_scan_attacker.py --target %TARGET_IP%
+if exist "simulators\port_scan_attacker.py" (
+    python simulators\port_scan_attacker.py --target %TARGET_IP%
+) else (
+    python port_scan_attacker.py --target %TARGET_IP%
+)
 echo.
 pause

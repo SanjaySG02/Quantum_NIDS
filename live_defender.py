@@ -130,7 +130,8 @@ def launch_containment_gui(threat_data: dict, auto_lock: bool = True, countdown_
     so it appears reliably on top every single time without thread deadlocks.
     """
     threat_data["countdown"] = countdown_sec
-    cmd = [sys.executable, "alert_hud.py", json.dumps(threat_data)]
+    hud_script = os.path.join("simulators", "alert_hud.py") if os.path.exists(os.path.join("simulators", "alert_hud.py")) else "alert_hud.py"
+    cmd = [sys.executable, hud_script, json.dumps(threat_data)]
     if auto_lock:
         cmd.append("--auto-lock")
     try:
@@ -238,9 +239,9 @@ def main():
     if not auto_lock_enabled:
         print(f"{YELLOW}[!] SAFE DRY-RUN MODE: Screen lock is DISABLED (--no-lock){RESET}")
 
-    # Load artifacts and metadata
-    artifacts_path = "quantum_artifacts.json"
-    meta_path = "preprocessing_meta.json"
+    # Load artifacts and metadata (support both artifacts/ subfolder and root)
+    artifacts_path = os.path.join("artifacts", "quantum_artifacts.json") if os.path.exists(os.path.join("artifacts", "quantum_artifacts.json")) else "quantum_artifacts.json"
+    meta_path = os.path.join("artifacts", "preprocessing_meta.json") if os.path.exists(os.path.join("artifacts", "preprocessing_meta.json")) else "preprocessing_meta.json"
 
     if not (os.path.exists(artifacts_path) and os.path.exists(meta_path)):
         logger.error("Missing configuration files (%s, %s). Please ensure models are trained.", artifacts_path, meta_path)
