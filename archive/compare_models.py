@@ -139,7 +139,13 @@ class LSTMModel(nn.Module):
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    default_csv = os.path.join(base_dir, 'CTU13_Merged_Traffic.csv')
+    candidates = [
+        os.path.join(base_dir, '..', 'data', 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, 'data', 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, '..', 'CTU13_Merged_Traffic.csv')
+    ]
+    default_csv = next((p for p in candidates if os.path.exists(p)), candidates[0])
     parser = argparse.ArgumentParser(description="Compare RF, XGBoost, GNN, and LSTM on CTU-13 dataset.")
     parser.add_argument('--csv_path', type=str, default=default_csv, help='Path to merged traffic csv')
     parser.add_argument('--sample_size', type=int, default=10000, help='Sample size to downsample (default: 10000)')
@@ -318,9 +324,13 @@ def main():
         plt.text(i - width/2, accuracies[i] + 0.5, f"{accuracies[i]:.1f}%", ha='center', va='bottom', fontsize=9)
         plt.text(i + width/2, f1_scores[i] + 0.5, f"{f1_scores[i]:.1f}%", ha='center', va='bottom', fontsize=9)
         
+    plots_dir = os.path.join(base_dir, '..', 'plots') if os.path.isdir(os.path.join(base_dir, '..', 'plots')) else (
+        'plots' if os.path.isdir('plots') else '.'
+    )
     plt.tight_layout()
-    plt.savefig('model_comparison.png')
-    print("\nSaved comparison chart to model_comparison.png")
+    comp_path = os.path.join(plots_dir, 'model_comparison.png')
+    plt.savefig(comp_path)
+    print(f"\nSaved comparison chart to {comp_path}")
 
 if __name__ == '__main__':
     main()

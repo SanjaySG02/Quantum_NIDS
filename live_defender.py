@@ -391,11 +391,24 @@ def main():
                 f_att = run_fidelity_estimation(scaled_values, attack_prototype, simulator, shots=shots)
 
                 sim_score = f_att - f_norm
-                prediction = "MALICIOUS" if sim_score > threshold else "BENIGN"
                 
-                # Confidence Calculation
+                # Quantum Decision Rule:
+                # 1. Multi-port reconnaissance sweep with score > threshold is MALICIOUS
+                # 2. Traffic with Attack fidelity dominating Normal fidelity (f_att > f_norm) is MALICIOUS
+                # 3. Legitimate single-service connections (f_norm >= f_att) are BENIGN
+                if len(flow_data["ports_scanned"]) > 1 and sim_score > threshold:
+                    prediction = "MALICIOUS"
+                elif f_att > f_norm:
+                    prediction = "MALICIOUS"
+                else:
+                    prediction = "BENIGN"
+                
+                # Confidence Calculation aligned with prediction class
                 if (f_norm + f_att) > 0:
-                    confidence = (max(f_norm, f_att) / (f_norm + f_att)) * 100.0
+                    if prediction == "MALICIOUS":
+                        confidence = (f_att / (f_norm + f_att)) * 100.0
+                    else:
+                        confidence = (f_norm / (f_norm + f_att)) * 100.0
                 else:
                     confidence = 50.0
 

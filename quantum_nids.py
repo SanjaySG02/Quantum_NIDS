@@ -126,7 +126,19 @@ def main():
     parser.add_argument('--shots', type=int, default=1024, help='Number of shots for Aer simulator runs')
     args = parser.parse_args()
 
-    # Load datasets
+    # Helper to resolve file paths across root and subfolders
+    def find_file(fname, subfolders=("data", "artifacts", "plots", "")):
+        for f in subfolders:
+            p = os.path.join(f, fname) if f else fname
+            if os.path.exists(p):
+                return p
+        return fname
+
+    train_path = find_file("train_processed.csv", ("data", ""))
+    val_path = find_file("val_processed.csv", ("data", ""))
+    test_path = find_file("test_processed.csv", ("data", ""))
+    feat_path = find_file("selected_features.json", ("artifacts", ""))
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     train_candidates = [os.path.join(base_dir, "data", "train_processed.csv"), os.path.join(base_dir, "train_processed.csv"), "data/train_processed.csv", "train_processed.csv"]
     val_candidates = [os.path.join(base_dir, "data", "val_processed.csv"), os.path.join(base_dir, "val_processed.csv"), "data/val_processed.csv", "val_processed.csv"]
@@ -214,19 +226,22 @@ def main():
         rec = recall_score(y_val, preds, zero_division=0)
         tn, fp, fn, tp = confusion_matrix(y_val, preds).ravel()
         fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
-        # Weighted Youden index: 0.6 * Recall - 0.4 * FPR (favors detection over low false alarm)
-        j = 0.6 * rec - 0.4 * fpr
+        # Standard Youden's J statistic: Recall - FPR (balances sensitivity and specificity equally)
+        j = rec - fpr
         j_scores.append(j)
         if j > best_j:
             best_j = j
             best_threshold = t
 
-    logger.info("Adaptive threshold tuning complete. Best Threshold: %.4f | Val Weighted Youden's J: %.4f", best_threshold, best_j)
+    logger.info("Adaptive threshold tuning complete. Best Threshold: %.4f | Val Youden's J: %.4f", best_threshold, best_j)
 
     artifacts_dir = os.path.join(base_dir, "artifacts") if os.path.isdir(os.path.join(base_dir, "artifacts")) else base_dir
     plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
 
     # Save artifacts for real-time adapter
+    art_dir = "artifacts" if os.path.isdir("artifacts") else "."
+    plots_dir = "plots" if os.path.isdir("plots") else "."
+
     artifacts = {
         "normal_prototype": normal_prototype.tolist(),
         "attack_prototype": attack_prototype.tolist(),
@@ -319,7 +334,8 @@ def main():
 
     # Save to metrics log
     metrics_qml = pd.DataFrame([metrics_ideal, metrics_noisy])
-    metrics_qml.to_csv(os.path.join(artifacts_dir, "quantum_metrics.csv"), index=False)
+    metrics_path = os.path.join(artifacts_dir, "quantum_metrics.csv")
+    metrics_qml.to_csv(metrics_path, index=False)
     
     # Combined Metrics Output
     logger.info("Quantum Similarity Engine Results:")

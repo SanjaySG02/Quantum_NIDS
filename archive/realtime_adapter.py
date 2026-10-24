@@ -92,7 +92,6 @@ def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator=None, shots:
         return calculate_statevector_fidelity(x, p)
 
 def main():
-    # Load quantum artifacts
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     artifacts_candidates = [
         os.path.join(base_dir, "artifacts", "quantum_artifacts.json"),
@@ -110,7 +109,7 @@ def main():
     test_data_path = next((p for p in test_candidates if os.path.exists(p)), "data/test_processed.csv")
     
     if not (os.path.exists(artifacts_path) and os.path.exists(test_data_path)):
-        logger.error("Missing required configuration or dataset. Please run classical_nids.py and quantum_nids.py first.")
+        logger.error("Missing required configuration (%s) or dataset (%s). Please run classical_nids.py and quantum_nids.py first.", artifacts_path, test_data_path)
         sys.exit(1)
         
     logger.info("Loading QML artifacts from %s...", artifacts_path)

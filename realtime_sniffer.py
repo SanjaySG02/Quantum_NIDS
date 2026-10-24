@@ -363,7 +363,7 @@ def main():
     meta_path = next((p for p in meta_candidates if os.path.exists(p)), "artifacts/preprocessing_meta.json")
     
     if not (os.path.exists(artifacts_path) and os.path.exists(meta_path)):
-        logger.error("Missing configuration files. Please run classical_nids.py and quantum_nids.py first.")
+        logger.error("Missing configuration files (%s, %s). Please run classical_nids.py and quantum_nids.py first.", artifacts_path, meta_path)
         sys.exit(1)
         
     logger.info("Loading preprocessing parameters from %s...", meta_path)

@@ -124,7 +124,13 @@ class GCN(nn.Module):
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    default_csv = os.path.join(base_dir, 'CTU13_Merged_Traffic.csv')
+    candidates = [
+        os.path.join(base_dir, '..', 'data', 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, 'data', 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, 'CTU13_Merged_Traffic.csv'),
+        os.path.join(base_dir, '..', 'CTU13_Merged_Traffic.csv')
+    ]
+    default_csv = next((p for p in candidates if os.path.exists(p)), candidates[0])
     parser = argparse.ArgumentParser(description="Train a classical GNN on CTU-13 dataset.")
     parser.add_argument('--csv_path', type=str, default=default_csv, help='Path to merged traffic csv')
     parser.add_argument('--sample_size', type=int, default=10000, help='Total sample size to downsample to (0 for all)')
@@ -242,9 +248,13 @@ def main():
     plt.legend()
     plt.grid(True)
 
+    plots_dir = os.path.join(base_dir, '..', 'plots') if os.path.isdir(os.path.join(base_dir, '..', 'plots')) else (
+        'plots' if os.path.isdir('plots') else '.'
+    )
     plt.tight_layout()
-    plt.savefig('training_history.png')
-    print("Saved training history plot to training_history.png")
+    hist_path = os.path.join(plots_dir, 'training_history.png')
+    plt.savefig(hist_path)
+    print(f"Saved training history plot to {hist_path}")
 
     # Confusion matrix plot
     plt.figure(figsize=(6, 5))
@@ -270,8 +280,9 @@ def main():
     plt.ylabel('Actual Label')
     plt.xlabel('Predicted Label')
     plt.tight_layout()
-    plt.savefig('confusion_matrix.png')
-    print("Saved confusion matrix plot to confusion_matrix.png")
+    cm_path = os.path.join(plots_dir, 'confusion_matrix.png')
+    plt.savefig(cm_path)
+    print(f"Saved confusion matrix plot to {cm_path}")
 
 if __name__ == '__main__':
     main()

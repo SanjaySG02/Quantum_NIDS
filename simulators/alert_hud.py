@@ -69,7 +69,7 @@ def main():
 
     f_att = threat_data.get('f_att', 0.0)
     sim_score = threat_data.get('sim_score', 0.0)
-    thresh = threat_data.get('threshold', -0.28)
+    thresh = threat_data.get('threshold', 0.0)
     conf = threat_data.get('confidence', 0.0)
     latency = threat_data.get('latency_ms', 0.0)
 
@@ -113,7 +113,9 @@ def main():
         else:
             timer_var.set("Workstation Locked.")
             locked[0] = True
+            root.update()
             lock_workstation()
+            root.after(300, root.destroy)
 
     if auto_lock:
         root.after(1000, tick)
@@ -125,7 +127,9 @@ def main():
     def manual_lock():
         locked[0] = True
         timer_var.set("Workstation Locked.")
+        root.update()
         lock_workstation()
+        root.after(300, root.destroy)
 
     def dismiss():
         locked[0] = True

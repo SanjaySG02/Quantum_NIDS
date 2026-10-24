@@ -22,19 +22,32 @@ Modern Network Intrusion Detection Systems (NIDS) struggle with high-dimensional
 
 ```text
 Quantum_NIDS/
-├── live_defender.py          # Core: Real-time Multi-Port Sentry, Quantum Similarity Engine & Auto-Lockdown
-├── port_scan_attacker.py      # Simulator: Adversarial Multi-Port Reconnaissance Sweep
-├── benign_client.py           # Simulator: Legitimate User Single-Service Request
-├── alert_hud.py               # GUI: Emergency Containment & Workstation Lockdown HUD Overlay
-├── quantum_artifacts.json     # Trained Quantum Prototypes (Normal & Attack) and Decision Threshold
-├── preprocessing_meta.json    # Feature scaler parameters & min/max bounds
-├── selected_features.json     # Optimal top-4 selected features
-├── classical_nids.py          # Classical baseline model trainer & feature selector
-├── quantum_nids.py            # Offline Quantum Prototype Trainer & Aer Simulator Benchmark
-├── realtime_sniffer.py        # Layer-2 packet sniffer (Npcap adapter)
-├── requirements.txt           # Project dependencies
-├── archive/                   # Archived experimental scripts (GNN, Model Comparison)
-└── README.md                  # Documentation & Demo Guide
+├── 1_START_DEFENDER.bat      # 1-Click Desktop Launcher for Defender (Laptop 1)
+├── 2_SAFE_TEST.bat           # 1-Click Desktop Launcher for Benign Client (Laptop 2)
+├── 3_ATTACK_TEST.bat         # 1-Click Desktop Launcher for Port Scan Attacker (Laptop 2)
+├── live_defender.py          # Core: Multi-Port Sentry, Quantum Similarity Engine & Active Defense
+├── classical_nids.py         # Classical baseline model trainer & feature selector
+├── quantum_nids.py           # Offline Quantum Prototype Trainer & Aer Simulator Benchmark
+├── realtime_sniffer.py       # Layer-2 packet sniffer (Npcap adapter)
+├── requirements.txt          # Project dependencies
+├── README.md                 # Documentation & Presentation Demo Guide
+├── simulators/               # Network simulation tools & threat containment GUI
+│   ├── benign_client.py      # Legitimate User Single-Service Request Simulator
+│   ├── port_scan_attacker.py # Adversarial Multi-Port Reconnaissance Sweep
+│   └── alert_hud.py          # Standalone Threat Containment & Lock Workstation GUI
+├── artifacts/                # Trained model artifacts, prototypes & performance metrics
+│   ├── quantum_artifacts.json
+│   ├── preprocessing_meta.json
+│   ├── selected_features.json
+│   ├── classical_metrics.csv
+│   └── quantum_metrics.csv
+├── data/                     # Cleaned, split & processed network datasets
+│   ├── CTU13_Merged_Traffic.csv
+│   ├── train_processed.csv
+│   ├── val_processed.csv
+│   └── test_processed.csv
+├── plots/                    # Generated ROC curves, confusion matrices & comparison charts
+└── archive/                  # Archived experimental scripts (GNN, Model Comparison)
 ```
 
 ---
@@ -53,7 +66,18 @@ pip install -r requirements.txt
 
 ## 4. How to Run the Live 2-Laptop Autonomous Defense Demo
 
-### Step 1: Launch the Quantum Guardian (Laptop 1 - Target / Defender)
+You can run the demo either with **1-Click Launchers (Recommended for Demo)** or via **Command Line**:
+
+### Option A: 1-Click Double-Click Launchers (Fastest & Typo-Free)
+* **Laptop 1 (Defender)**: Double-click `1_START_DEFENDER.bat` -> Press `1` for Live Lockdown Mode (or `2` for Safe Dry-Run). Note the IP shown.
+* **Laptop 2 (Safe Test)**: Double-click `2_SAFE_TEST.bat` -> Enter Laptop 1's IP -> Legitimate traffic sent.
+* **Laptop 2 (Attack Test)**: Double-click `3_ATTACK_TEST.bat` -> Press Enter to reuse cached IP -> Reconnaissance sweep launched!
+
+---
+
+### Option B: Command Line
+
+#### Step 1: Launch the Quantum Guardian (Laptop 1 - Target / Defender)
 Run the live quantum defender. On startup, it automatically detects and prints your laptop's active IP address:
 
 ```bash
@@ -64,20 +88,20 @@ python live_defender.py --no-lock
 python live_defender.py
 ```
 
-### Step 2: Demonstrate Normal Traffic (Laptop 2 - Legitimate User)
+#### Step 2: Demonstrate Normal Traffic (Laptop 2 - Legitimate User)
 Demonstrates that the quantum engine distinguishes safe traffic and avoids false positives:
 
 ```bash
-python benign_client.py --target <LAPTOP_1_IP>
+python simulators/benign_client.py --target <LAPTOP_1_IP>
 ```
 * **Result**: Laptop 1 evaluates the quantum state fidelity against the normal prototype ($F_{\text{Normal}} \approx 0.74 > F_{\text{Attack}} \approx 0.44$).
 * **Decision**: **`BENIGN`** (Green). No alarm, no lock.
 
-### Step 3: Launch the Adversarial Attack (Laptop 2 - Hacker / Reconnaissance)
+#### Step 3: Launch the Adversarial Attack (Laptop 2 - Hacker / Reconnaissance)
 Simulates an aggressive multi-port TCP reconnaissance sweep:
 
 ```bash
-python port_scan_attacker.py --target <LAPTOP_1_IP>
+python simulators/port_scan_attacker.py --target <LAPTOP_1_IP>
 ```
 * **Result**: Laptop 1 computes the quantum state overlap ($F_{\text{Attack}} \approx 0.59 > F_{\text{Normal}} \approx 0.29$).
 * **Decision**: **`MALICIOUS`** (Red) triggered in under 200 milliseconds.

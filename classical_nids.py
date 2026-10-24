@@ -149,6 +149,7 @@ def preprocess_and_split_data(csv_path: str, k_features: int = 4):
     plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
 
     # Plot and save feature importances
+    plots_dir = "plots" if os.path.isdir("plots") else "."
     plt.figure(figsize=(10, 6))
     plt.title("Random Forest Feature Importances")
     plt.bar(range(k_features), importances[indices[:k_features]], align="center", color="#4361ee")
@@ -170,6 +171,7 @@ def preprocess_and_split_data(csv_path: str, k_features: int = 4):
     X_test_scaled = scaler.transform(X_test)
 
     # Save preprocessing metadata for real-time live sniffing
+    art_dir = "artifacts" if os.path.isdir("artifacts") else "."
     meta = {
         "selected_features": top_k_features,
         "vocabularies": {col: vocabularies[col] for col in top_k_features if col in vocabularies},
@@ -178,14 +180,15 @@ def preprocess_and_split_data(csv_path: str, k_features: int = 4):
         "scaler_data_min": scaler.data_min_.tolist(),
         "scaler_data_max": scaler.data_max_.tolist()
     }
-    with open(os.path.join(artifacts_dir, "preprocessing_meta.json"), "w") as f:
+    with open(os.path.join(art_dir, "preprocessing_meta.json"), "w") as f:
         json.dump(meta, f)
 
     # Save selected features to file
-    with open(os.path.join(artifacts_dir, "selected_features.json"), "w") as f:
+    with open(os.path.join(art_dir, "selected_features.json"), "w") as f:
         json.dump(top_k_features, f)
 
     # Reconstruct as DataFrames to save csv files
+    data_dir = "data" if os.path.isdir("data") else "."
     train_processed = pd.DataFrame(X_train_scaled, columns=top_k_features)
     train_processed['label'] = y_train
     train_processed.to_csv(os.path.join(data_dir, "train_processed.csv"), index=False)
@@ -289,8 +292,9 @@ def main():
 
     # Output metrics to CSV
     metrics_df = pd.DataFrame(all_metrics)
-    metrics_df.to_csv(os.path.join(artifacts_dir, "classical_metrics.csv"), index=False)
-    logger.info("Classical metrics written to %s:", os.path.join(artifacts_dir, "classical_metrics.csv"))
+    metrics_path = os.path.join(artifacts_dir, "classical_metrics.csv")
+    metrics_df.to_csv(metrics_path, index=False)
+    logger.info("Classical metrics written to %s:", metrics_path)
     print(metrics_df.to_string(index=False))
 
     # --- PLOTTING ---
