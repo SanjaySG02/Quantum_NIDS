@@ -47,3 +47,6 @@ venv.bak/
 
 # Logs
 *.log
+
+# Local demo IP cache
+target_ip.txt
