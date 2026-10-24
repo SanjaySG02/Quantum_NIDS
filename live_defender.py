@@ -23,13 +23,20 @@ import numpy as np
 
 # Qiskit imports
 from qiskit import QuantumCircuit, transpile
-from qiskit_aer import AerSimulator
+from qiskit.quantum_info import Statevector, state_fidelity
+try:
+    from qiskit_aer import AerSimulator
+    AER_AVAILABLE = True
+except ImportError:
+    AerSimulator = None
+    AER_AVAILABLE = False
 
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("QuantumGuardian")
 logging.getLogger('qiskit').setLevel(logging.WARNING)
-logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
+if AER_AVAILABLE:
+    logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
 logging.getLogger('stevedore').setLevel(logging.WARNING)
 
 # ANSI formatting
@@ -71,16 +78,44 @@ def construct_fidelity_circuit(x: np.ndarray, p: np.ndarray) -> QuantumCircuit:
     qc.measure_all()
     return qc
 
-def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator: AerSimulator, shots: int = 1024) -> float:
+def calculate_statevector_fidelity(x: np.ndarray, p: np.ndarray) -> float:
     """
-    Runs the compute-uncompute circuit on the AerSimulator and returns probability of |0...0>.
+    Computes analytical statevector fidelity directly using Qiskit quantum_info.
     """
-    qc = construct_fidelity_circuit(x, p)
-    transpiled_qc = transpile(qc, simulator)
-    job = simulator.run(transpiled_qc, shots=shots)
-    counts = job.result().get_counts(transpiled_qc)
-    zero_state = '0' * len(x)
-    return counts.get(zero_state, 0) / shots
+    num_qubits = len(x)
+    qc_x = QuantumCircuit(num_qubits)
+    for i in range(num_qubits):
+        qc_x.ry(x[i], i)
+    for i in range(num_qubits):
+        qc_x.h(i)
+    for i in range(num_qubits - 1):
+        qc_x.cx(i, i+1)
+    sv_x = Statevector.from_instruction(qc_x)
+
+    qc_p = QuantumCircuit(num_qubits)
+    for i in range(num_qubits):
+        qc_p.ry(p[i], i)
+    for i in range(num_qubits):
+        qc_p.h(i)
+    for i in range(num_qubits - 1):
+        qc_p.cx(i, i+1)
+    sv_p = Statevector.from_instruction(qc_p)
+
+    return float(state_fidelity(sv_x, sv_p))
+
+def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator=None, shots: int = 1024) -> float:
+    """
+    Runs the compute-uncompute circuit on the AerSimulator (if available) or analytical Statevector.
+    """
+    if simulator is not None and AER_AVAILABLE:
+        qc = construct_fidelity_circuit(x, p)
+        transpiled_qc = transpile(qc, simulator)
+        job = simulator.run(transpiled_qc, shots=shots)
+        counts = job.result().get_counts(transpiled_qc)
+        zero_state = '0' * len(x)
+        return counts.get(zero_state, 0) / shots
+    else:
+        return calculate_statevector_fidelity(x, p)
 
 # =====================================================================
 # 2. ACTIVE DEFENSE & LOCKDOWN MODULE
@@ -130,7 +165,14 @@ def launch_containment_gui(threat_data: dict, auto_lock: bool = True, countdown_
     so it appears reliably on top every single time without thread deadlocks.
     """
     threat_data["countdown"] = countdown_sec
-    hud_script = os.path.join("simulators", "alert_hud.py") if os.path.exists(os.path.join("simulators", "alert_hud.py")) else "alert_hud.py"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    hud_candidates = [
+        os.path.join(base_dir, "simulators", "alert_hud.py"),
+        os.path.join(base_dir, "alert_hud.py"),
+        "simulators/alert_hud.py",
+        "alert_hud.py"
+    ]
+    hud_script = next((p for p in hud_candidates if os.path.exists(p)), "alert_hud.py")
     cmd = [sys.executable, hud_script, json.dumps(threat_data)]
     if auto_lock:
         cmd.append("--auto-lock")
@@ -239,9 +281,22 @@ def main():
     if not auto_lock_enabled:
         print(f"{YELLOW}[!] SAFE DRY-RUN MODE: Screen lock is DISABLED (--no-lock){RESET}")
 
-    # Load artifacts and metadata (support both artifacts/ subfolder and root)
-    artifacts_path = os.path.join("artifacts", "quantum_artifacts.json") if os.path.exists(os.path.join("artifacts", "quantum_artifacts.json")) else "quantum_artifacts.json"
-    meta_path = os.path.join("artifacts", "preprocessing_meta.json") if os.path.exists(os.path.join("artifacts", "preprocessing_meta.json")) else "preprocessing_meta.json"
+    # Load artifacts and metadata
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    artifacts_candidates = [
+        os.path.join(base_dir, "artifacts", "quantum_artifacts.json"),
+        os.path.join(base_dir, "quantum_artifacts.json"),
+        "artifacts/quantum_artifacts.json",
+        "quantum_artifacts.json"
+    ]
+    meta_candidates = [
+        os.path.join(base_dir, "artifacts", "preprocessing_meta.json"),
+        os.path.join(base_dir, "preprocessing_meta.json"),
+        "artifacts/preprocessing_meta.json",
+        "preprocessing_meta.json"
+    ]
+    artifacts_path = next((p for p in artifacts_candidates if os.path.exists(p)), "artifacts/quantum_artifacts.json")
+    meta_path = next((p for p in meta_candidates if os.path.exists(p)), "artifacts/preprocessing_meta.json")
 
     if not (os.path.exists(artifacts_path) and os.path.exists(meta_path)):
         logger.error("Missing configuration files (%s, %s). Please ensure models are trained.", artifacts_path, meta_path)
@@ -260,12 +315,17 @@ def main():
     threshold = artifacts["threshold"]
 
     logger.info("Quantum Model Initialized.")
+    logger.info("Artifacts loaded from: %s", artifacts_path)
     logger.info("Selected Features: %s", selected_features)
     logger.info("Threshold Boundary: %.4f", threshold)
     logger.info("Normal Prototype State: %s", normal_prototype.round(4).tolist())
     logger.info("Attack Prototype State: %s", attack_prototype.round(4).tolist())
 
-    simulator = AerSimulator()
+    simulator = AerSimulator() if AER_AVAILABLE else None
+    if AER_AVAILABLE:
+        logger.info("Using Qiskit AerSimulator for shot-based execution.")
+    else:
+        logger.info("AerSimulator unavailable on this environment; using Qiskit Statevector engine (Exact & ultra-fast).")
     flow_tracker = FlowTracker()
 
     # Sentry Port Range to Monitor

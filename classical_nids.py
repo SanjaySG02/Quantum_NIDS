@@ -143,13 +143,18 @@ def preprocess_and_split_data(csv_path: str, k_features: int = 4):
     top_k_features = X_train.columns[indices[:k_features]].tolist()
     logger.info("Automatically selected Top-%d features: %s", k_features, top_k_features)
 
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    data_dir = os.path.join(base_dir, "data") if os.path.isdir(os.path.join(base_dir, "data")) else base_dir
+    artifacts_dir = os.path.join(base_dir, "artifacts") if os.path.isdir(os.path.join(base_dir, "artifacts")) else base_dir
+    plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
+
     # Plot and save feature importances
     plt.figure(figsize=(10, 6))
     plt.title("Random Forest Feature Importances")
     plt.bar(range(k_features), importances[indices[:k_features]], align="center", color="#4361ee")
     plt.xticks(range(k_features), top_k_features, rotation=15)
     plt.tight_layout()
-    plt.savefig("feature_importance.png")
+    plt.savefig(os.path.join(plots_dir, "feature_importance.png"))
     plt.close()
 
     # Filter features
@@ -173,28 +178,28 @@ def preprocess_and_split_data(csv_path: str, k_features: int = 4):
         "scaler_data_min": scaler.data_min_.tolist(),
         "scaler_data_max": scaler.data_max_.tolist()
     }
-    with open("preprocessing_meta.json", "w") as f:
+    with open(os.path.join(artifacts_dir, "preprocessing_meta.json"), "w") as f:
         json.dump(meta, f)
 
     # Save selected features to file
-    with open("selected_features.json", "w") as f:
+    with open(os.path.join(artifacts_dir, "selected_features.json"), "w") as f:
         json.dump(top_k_features, f)
 
     # Reconstruct as DataFrames to save csv files
     train_processed = pd.DataFrame(X_train_scaled, columns=top_k_features)
     train_processed['label'] = y_train
-    train_processed.to_csv("train_processed.csv", index=False)
+    train_processed.to_csv(os.path.join(data_dir, "train_processed.csv"), index=False)
 
     val_processed = pd.DataFrame(X_val_scaled, columns=top_k_features)
     val_processed['label'] = y_val
-    val_processed.to_csv("val_processed.csv", index=False)
+    val_processed.to_csv(os.path.join(data_dir, "val_processed.csv"), index=False)
 
     test_processed = pd.DataFrame(X_test_scaled, columns=top_k_features)
     test_processed['label'] = y_test
-    test_processed.to_csv("test_processed.csv", index=False)
+    test_processed.to_csv(os.path.join(data_dir, "test_processed.csv"), index=False)
 
-    logger.info("Processed datasets saved. Train shape: %s, Val shape: %s, Test shape: %s", 
-                train_processed.shape, val_processed.shape, test_processed.shape)
+    logger.info("Processed datasets saved to %s. Train shape: %s, Val shape: %s, Test shape: %s", 
+                data_dir, train_processed.shape, val_processed.shape, test_processed.shape)
 
     return X_train_scaled, y_train, X_val_scaled, y_val, X_test_scaled, y_test, top_k_features
 
@@ -247,9 +252,18 @@ def evaluate_classifier(model, X_train, y_train, X_test, y_test, name: str):
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(base_dir, "CTU13_Merged_Traffic.csv")
-    if not os.path.exists(csv_path):
-        logger.error("CTU-13 merged dataset not found. Please ensure CTU13_Merged_Traffic.csv is present.")
+    artifacts_dir = os.path.join(base_dir, "artifacts") if os.path.isdir(os.path.join(base_dir, "artifacts")) else base_dir
+    plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
+
+    csv_candidates = [
+        os.path.join(base_dir, "data", "CTU13_Merged_Traffic.csv"),
+        os.path.join(base_dir, "CTU13_Merged_Traffic.csv"),
+        "data/CTU13_Merged_Traffic.csv",
+        "CTU13_Merged_Traffic.csv"
+    ]
+    csv_path = next((p for p in csv_candidates if os.path.exists(p)), None)
+    if not csv_path:
+        logger.error("CTU-13 merged dataset not found. Please ensure CTU13_Merged_Traffic.csv is present in data/ or root.")
         return
 
     # Process and split
@@ -275,8 +289,8 @@ def main():
 
     # Output metrics to CSV
     metrics_df = pd.DataFrame(all_metrics)
-    metrics_df.to_csv("classical_metrics.csv", index=False)
-    logger.info("Classical metrics written to classical_metrics.csv:")
+    metrics_df.to_csv(os.path.join(artifacts_dir, "classical_metrics.csv"), index=False)
+    logger.info("Classical metrics written to %s:", os.path.join(artifacts_dir, "classical_metrics.csv"))
     print(metrics_df.to_string(index=False))
 
     # --- PLOTTING ---
@@ -308,7 +322,7 @@ def main():
         ax.set_ylabel('Actual Label')
         ax.set_xlabel('Predicted Label')
     plt.tight_layout()
-    plt.savefig("confusion_matrix_classical.png")
+    plt.savefig(os.path.join(plots_dir, "confusion_matrix_classical.png"))
     plt.close()
 
     # 2. ROC Curve Plot
@@ -322,7 +336,7 @@ def main():
     plt.title('ROC Curves - Classical Models')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    plt.savefig("roc_curve_classical.png")
+    plt.savefig(os.path.join(plots_dir, "roc_curve_classical.png"))
     plt.close()
 
     # 3. Model Comparison Plot (Accuracy vs F1-Score)
@@ -338,7 +352,7 @@ def main():
     plt.legend()
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
-    plt.savefig("model_comparison_classical.png")
+    plt.savefig(os.path.join(plots_dir, "model_comparison_classical.png"))
     plt.close()
 
     logger.info("Classical NIDS script completed successfully.")

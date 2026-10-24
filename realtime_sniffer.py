@@ -8,7 +8,13 @@ import numpy as np
 
 # Qiskit imports
 from qiskit import QuantumCircuit, transpile
-from qiskit_aer import AerSimulator
+from qiskit.quantum_info import Statevector, state_fidelity
+try:
+    from qiskit_aer import AerSimulator
+    AER_AVAILABLE = True
+except ImportError:
+    AerSimulator = None
+    AER_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -16,7 +22,8 @@ logger = logging.getLogger("LiveSnifferNIDS")
 
 # Suppress verbose external package logs
 logging.getLogger('qiskit').setLevel(logging.WARNING)
-logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
+if AER_AVAILABLE:
+    logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
 logging.getLogger('stevedore').setLevel(logging.WARNING)
 
 try:
@@ -51,17 +58,44 @@ def construct_fidelity_circuit(x: np.ndarray, p: np.ndarray) -> QuantumCircuit:
     qc.measure_all()
     return qc
 
-def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator: AerSimulator, shots: int = 1024) -> float:
+def calculate_statevector_fidelity(x: np.ndarray, p: np.ndarray) -> float:
     """
-    Runs the compute-uncompute circuit on the AerSimulator.
+    Computes analytical statevector fidelity directly using Qiskit quantum_info.
     """
-    qc = construct_fidelity_circuit(x, p)
-    transpiled_qc = transpile(qc, simulator)
-    job = simulator.run(transpiled_qc, shots=shots)
-    counts = job.result().get_counts(transpiled_qc)
-    
-    zero_state = '0' * len(x)
-    return counts.get(zero_state, 0) / shots
+    num_qubits = len(x)
+    qc_x = QuantumCircuit(num_qubits)
+    for i in range(num_qubits):
+        qc_x.ry(x[i], i)
+    for i in range(num_qubits):
+        qc_x.h(i)
+    for i in range(num_qubits - 1):
+        qc_x.cx(i, i+1)
+    sv_x = Statevector.from_instruction(qc_x)
+
+    qc_p = QuantumCircuit(num_qubits)
+    for i in range(num_qubits):
+        qc_p.ry(p[i], i)
+    for i in range(num_qubits):
+        qc_p.h(i)
+    for i in range(num_qubits - 1):
+        qc_p.cx(i, i+1)
+    sv_p = Statevector.from_instruction(qc_p)
+
+    return float(state_fidelity(sv_x, sv_p))
+
+def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator=None, shots: int = 1024) -> float:
+    """
+    Runs the compute-uncompute circuit on the AerSimulator (if available) or analytical Statevector.
+    """
+    if simulator is not None and AER_AVAILABLE:
+        qc = construct_fidelity_circuit(x, p)
+        transpiled_qc = transpile(qc, simulator)
+        job = simulator.run(transpiled_qc, shots=shots)
+        counts = job.result().get_counts(transpiled_qc)
+        zero_state = '0' * len(x)
+        return counts.get(zero_state, 0) / shots
+    else:
+        return calculate_statevector_fidelity(x, p)
 
 # Global flow table to maintain states of connection streams
 # Key: (src_ip, sport, dst_ip, dport, proto)
@@ -312,8 +346,21 @@ def process_live_packet(pkt, simulator, selected_features, vocabularies, scaler_
 
 def main():
     # Load quantum configurations
-    artifacts_path = "quantum_artifacts.json"
-    meta_path = "preprocessing_meta.json"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    artifacts_candidates = [
+        os.path.join(base_dir, "artifacts", "quantum_artifacts.json"),
+        os.path.join(base_dir, "quantum_artifacts.json"),
+        "artifacts/quantum_artifacts.json",
+        "quantum_artifacts.json"
+    ]
+    meta_candidates = [
+        os.path.join(base_dir, "artifacts", "preprocessing_meta.json"),
+        os.path.join(base_dir, "preprocessing_meta.json"),
+        "artifacts/preprocessing_meta.json",
+        "preprocessing_meta.json"
+    ]
+    artifacts_path = next((p for p in artifacts_candidates if os.path.exists(p)), "artifacts/quantum_artifacts.json")
+    meta_path = next((p for p in meta_candidates if os.path.exists(p)), "artifacts/preprocessing_meta.json")
     
     if not (os.path.exists(artifacts_path) and os.path.exists(meta_path)):
         logger.error("Missing configuration files. Please run classical_nids.py and quantum_nids.py first.")
@@ -336,7 +383,11 @@ def main():
     attack_prototype = np.array(artifacts["attack_prototype"])
     threshold = artifacts["threshold"]
     
-    simulator = AerSimulator()
+    simulator = AerSimulator() if AER_AVAILABLE else None
+    if AER_AVAILABLE:
+        logger.info("Using Qiskit AerSimulator for shot-based execution.")
+    else:
+        logger.info("AerSimulator unavailable on this environment; using Qiskit Statevector engine (Exact & ultra-fast).")
     
     print("\n" + "="*110)
     print("                 LIVE INTRUSION DETECTION SYSTEM: HYBRID QUANTUM STATE FIDELITY ENGINE")

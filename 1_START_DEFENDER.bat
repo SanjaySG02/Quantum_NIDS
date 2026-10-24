@@ -13,12 +13,17 @@ echo.
 set "mode=1"
 set /p mode="Choose Mode [1 or 2] (Press Enter for Live Mode 1): "
 echo.
+set "DEFENDER_SCRIPT=live_defender.py"
+if not exist "%DEFENDER_SCRIPT%" (
+    if exist "simulators\live_defender.py" set "DEFENDER_SCRIPT=simulators\live_defender.py"
+)
+
 if "%mode%"=="2" (
     echo [*] Launching in Safe Dry-Run Mode...
-    python live_defender.py --no-lock
+    python %DEFENDER_SCRIPT% --no-lock
 ) else (
     echo [*] Launching in Live Presentation Mode (Lockdown Enabled)...
-    python live_defender.py
+    python %DEFENDER_SCRIPT%
 )
 echo.
 pause

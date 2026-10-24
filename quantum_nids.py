@@ -10,8 +10,15 @@ import matplotlib.pyplot as plt
 # Qiskit imports
 from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import Statevector, state_fidelity
-from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel, depolarizing_error
+try:
+    from qiskit_aer import AerSimulator
+    from qiskit_aer.noise import NoiseModel, depolarizing_error
+    AER_AVAILABLE = True
+except ImportError:
+    AerSimulator = None
+    NoiseModel = None
+    depolarizing_error = None
+    AER_AVAILABLE = False
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
     confusion_matrix, matthews_corrcoef, roc_curve
@@ -23,7 +30,8 @@ logger = logging.getLogger("QuantumNIDS")
 
 # Suppress verbose external package logs
 logging.getLogger('qiskit').setLevel(logging.WARNING)
-logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
+if AER_AVAILABLE:
+    logging.getLogger('qiskit_aer').setLevel(logging.WARNING)
 logging.getLogger('stevedore').setLevel(logging.WARNING)
 
 # Random seed
@@ -34,6 +42,8 @@ def get_noisy_simulator():
     """
     Creates an AerSimulator with custom depolarizing error models for noisy simulation.
     """
+    if not AER_AVAILABLE:
+        return None
     noise_model = NoiseModel()
     # 1% gate error on single qubit gates, 5% gate error on CNOT gates
     error_1 = depolarizing_error(0.01, 1)
@@ -95,18 +105,19 @@ def calculate_statevector_fidelity(x: np.ndarray, p: np.ndarray) -> float:
 
     return state_fidelity(sv_x, sv_p)
 
-def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator: AerSimulator, shots: int = 1024) -> float:
+def run_fidelity_estimation(x: np.ndarray, p: np.ndarray, simulator=None, shots: int = 1024) -> float:
     """
-    Runs the compute-uncompute circuit on the specified AerSimulator.
+    Runs the compute-uncompute circuit on the specified AerSimulator, or falls back to Statevector.
     """
-    qc = construct_fidelity_circuit(x, p)
-    transpiled_qc = transpile(qc, simulator)
-    job = simulator.run(transpiled_qc, shots=shots)
-    counts = job.result().get_counts(transpiled_qc)
-    
-    # State '0000' indicates perfect overlap after compute-uncompute
-    zero_state = '0' * len(x)
-    return counts.get(zero_state, 0) / shots
+    if simulator is not None and AER_AVAILABLE:
+        qc = construct_fidelity_circuit(x, p)
+        transpiled_qc = transpile(qc, simulator)
+        job = simulator.run(transpiled_qc, shots=shots)
+        counts = job.result().get_counts(transpiled_qc)
+        zero_state = '0' * len(x)
+        return counts.get(zero_state, 0) / shots
+    else:
+        return calculate_statevector_fidelity(x, p)
 
 def main():
     parser = argparse.ArgumentParser(description="Train and evaluate Hybrid Quantum Similarity Engine NIDS.")
@@ -116,18 +127,32 @@ def main():
     args = parser.parse_args()
 
     # Load datasets
-    if not (os.path.exists("train_processed.csv") and os.path.exists("val_processed.csv") and os.path.exists("test_processed.csv")):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    train_candidates = [os.path.join(base_dir, "data", "train_processed.csv"), os.path.join(base_dir, "train_processed.csv"), "data/train_processed.csv", "train_processed.csv"]
+    val_candidates = [os.path.join(base_dir, "data", "val_processed.csv"), os.path.join(base_dir, "val_processed.csv"), "data/val_processed.csv", "val_processed.csv"]
+    test_candidates = [os.path.join(base_dir, "data", "test_processed.csv"), os.path.join(base_dir, "test_processed.csv"), "data/test_processed.csv", "test_processed.csv"]
+    feat_candidates = [os.path.join(base_dir, "artifacts", "selected_features.json"), os.path.join(base_dir, "selected_features.json"), "artifacts/selected_features.json", "selected_features.json"]
+
+    train_path = next((p for p in train_candidates if os.path.exists(p)), None)
+    val_path = next((p for p in val_candidates if os.path.exists(p)), None)
+    test_path = next((p for p in test_candidates if os.path.exists(p)), None)
+    feat_path = next((p for p in feat_candidates if os.path.exists(p)), None)
+
+    if not (train_path and val_path and test_path and feat_path):
         logger.error("Missing processed dataset files. Please run classical_nids.py first.")
         return
 
-    train_df = pd.read_csv("train_processed.csv")
-    val_df = pd.read_csv("val_processed.csv")
-    test_df = pd.read_csv("test_processed.csv")
+    train_df = pd.read_csv(train_path)
+    val_df = pd.read_csv(val_path)
+    test_df = pd.read_csv(test_path)
 
-    with open("selected_features.json", "r") as f:
+    with open(feat_path, "r") as f:
         selected_features = json.load(f)
 
-    logger.info("Loaded processed datasets. Selected features: %s", selected_features)
+    logger.info("Loaded processed datasets from %s. Selected features: %s", train_path, selected_features)
+
+    artifacts_dir = os.path.join(base_dir, "artifacts") if os.path.isdir(os.path.join(base_dir, "artifacts")) else base_dir
+    plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
 
     # Class separation on train set to create prototype states
     train_normal = train_df[train_df['label'] == 0][selected_features].values
@@ -145,11 +170,11 @@ def main():
     logger.info("Saving quantum circuit diagram...")
     try:
         fig = qc_ref.draw(output='mpl')
-        fig.savefig("quantum_circuit.png")
+        fig.savefig(os.path.join(plots_dir, "quantum_circuit.png"))
         plt.close(fig)
     except Exception as e:
         logger.warning("Could not draw circuit using MPL. Outputting as text format. Error: %s", e)
-        with open("quantum_circuit.txt", "w", encoding="utf-8") as f:
+        with open(os.path.join(plots_dir, "quantum_circuit.txt"), "w", encoding="utf-8") as f:
             f.write(str(qc_ref.draw(output='text')))
 
     # Calculate circuit metadata
@@ -198,6 +223,9 @@ def main():
 
     logger.info("Adaptive threshold tuning complete. Best Threshold: %.4f | Val Weighted Youden's J: %.4f", best_threshold, best_j)
 
+    artifacts_dir = os.path.join(base_dir, "artifacts") if os.path.isdir(os.path.join(base_dir, "artifacts")) else base_dir
+    plots_dir = os.path.join(base_dir, "plots") if os.path.isdir(os.path.join(base_dir, "plots")) else base_dir
+
     # Save artifacts for real-time adapter
     artifacts = {
         "normal_prototype": normal_prototype.tolist(),
@@ -205,7 +233,7 @@ def main():
         "threshold": float(best_threshold),
         "selected_features": selected_features
     }
-    with open("quantum_artifacts.json", "w") as f:
+    with open(os.path.join(artifacts_dir, "quantum_artifacts.json"), "w") as f:
         json.dump(artifacts, f)
 
     # Plot threshold tuning curve
@@ -217,7 +245,7 @@ def main():
     plt.ylabel("Youden's J Statistic")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    plt.savefig("qml_threshold_tuning.png")
+    plt.savefig(os.path.join(plots_dir, "qml_threshold_tuning.png"))
     plt.close()
 
     # --- EVALUATION ON TEST SET ---
@@ -233,8 +261,8 @@ def main():
     logger.info("Evaluating on %d test samples using Ideal and Noisy simulators...", len(X_test))
 
     # Initialize simulators
-    sim_ideal = AerSimulator()
-    sim_noisy = get_noisy_simulator()
+    sim_ideal = AerSimulator() if AER_AVAILABLE else None
+    sim_noisy = get_noisy_simulator() if AER_AVAILABLE else None
 
     similarities_ideal = []
     similarities_noisy = []
@@ -291,7 +319,7 @@ def main():
 
     # Save to metrics log
     metrics_qml = pd.DataFrame([metrics_ideal, metrics_noisy])
-    metrics_qml.to_csv("quantum_metrics.csv", index=False)
+    metrics_qml.to_csv(os.path.join(artifacts_dir, "quantum_metrics.csv"), index=False)
     
     # Combined Metrics Output
     logger.info("Quantum Similarity Engine Results:")
@@ -309,7 +337,7 @@ def main():
     plt.ylabel('Frequency')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
-    plt.savefig("qml_similarity_distribution.png")
+    plt.savefig(os.path.join(plots_dir, "qml_similarity_distribution.png"))
     plt.close()
 
     # 2. Confusion Matrix Comparison
@@ -337,7 +365,7 @@ def main():
         ax.set_ylabel('Actual Label')
         ax.set_xlabel('Predicted Label')
     plt.tight_layout()
-    plt.savefig("qml_confusion_matrix.png")
+    plt.savefig(os.path.join(plots_dir, "qml_confusion_matrix.png"))
     plt.close()
 
     # 3. ROC Curve
@@ -352,12 +380,19 @@ def main():
     plt.title('ROC Curves - Quantum Similarity Engine')
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.5)
-    plt.savefig("qml_roc_curve.png")
+    plt.savefig(os.path.join(plots_dir, "qml_roc_curve.png"))
     plt.close()
 
     # 4. Final Models Comparison Graph
-    if os.path.exists("classical_metrics.csv"):
-        classical_df = pd.read_csv("classical_metrics.csv")
+    classical_metrics_candidates = [
+        os.path.join(artifacts_dir, "classical_metrics.csv"),
+        os.path.join(base_dir, "classical_metrics.csv"),
+        "artifacts/classical_metrics.csv",
+        "classical_metrics.csv"
+    ]
+    classical_metrics_path = next((p for p in classical_metrics_candidates if os.path.exists(p)), None)
+    if classical_metrics_path:
+        classical_df = pd.read_csv(classical_metrics_path)
         combined_df = pd.concat([classical_df, metrics_qml], ignore_index=True)
         
         plt.figure(figsize=(12, 6))
@@ -373,9 +408,9 @@ def main():
         plt.legend()
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
-        plt.savefig("final_model_comparison.png")
+        plt.savefig(os.path.join(plots_dir, "final_model_comparison.png"))
         plt.close()
-        logger.info("Saved combined performance plot to final_model_comparison.png")
+        logger.info("Saved combined performance plot to %s", os.path.join(plots_dir, "final_model_comparison.png"))
 
 if __name__ == '__main__':
     main()
